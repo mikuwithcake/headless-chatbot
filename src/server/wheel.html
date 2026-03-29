@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Raffle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;800&display=swap" rel="stylesheet"/>
+<style>
+  * { margin: 0; padding: 0; }
+  body { width: 500px; height: 500px; overflow: hidden; background: transparent; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="wheel" width="500" height="500"></canvas>
+<script>
+(function () {
+  var canvas = document.getElementById("wheel");
+  var ctx = canvas.getContext("2d");
+  var entries = [];
+  var rotation = 0;
+  var spinning = false;
+  var currentWinner = "";
+  var showWinner = false;
+  var winnerAlpha = 0;
+  var colors = [
+    "#ff2d55","#5856d6","#00e5ff","#ffcc02","#30d158",
+    "#ff6482","#bf5af2","#64d2ff","#ff9f0a","#32d74b"
+  ];
+  var glowColors = [
+    "rgba(255,45,85,0.35)","rgba(88,86,214,0.35)","rgba(0,229,255,0.35)",
+    "rgba(255,204,2,0.35)","rgba(48,209,88,0.35)","rgba(255,100,130,0.35)",
+    "rgba(191,90,242,0.35)","rgba(100,210,255,0.35)","rgba(255,159,10,0.35)",
+    "rgba(50,215,75,0.35)"
+  ];
+  var W = 500, H = 500, CX = 250, CY = 250;
+  var outerR = 240, innerR = 215, hubR = 38;
+  var ledCount = 32;
+  var ledPhase = 0;
+
+  function drawOuterRing() {
+    var grad = ctx.createRadialGradient(CX, CY, innerR, CX, CY, outerR + 4);
+    grad.addColorStop(0, "#1a1a2e");
+    grad.addColorStop(0.5, "#2d2d44");
+    grad.addColorStop(1, "#16162a");
+    ctx.beginPath();
+    ctx.arc(CX, CY, outerR + 4, 0, Math.PI * 2);
+    ctx.arc(CX, CY, innerR, 0, Math.PI * 2, true);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(CX, CY, outerR + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(CX, CY, innerR, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  function drawLeds() {
+    var ledR = (outerR + innerR) / 2 + 2;
+    for (var i = 0; i < ledCount; i++) {
+      var a = (Math.PI * 2 * i) / ledCount - Math.PI / 2;
+      var x = CX + Math.cos(a) * ledR;
+      var y = CY + Math.sin(a) * ledR;
+      var on = ((i + ledPhase) % 3) === 0;
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      if (on) {
+        ctx.fillStyle = "#ffe566";
+        ctx.shadowColor = "#ffe566";
+        ctx.shadowBlur = 8;
+      } else {
+        ctx.fillStyle = "rgba(255,229,102,0.15)";
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+      }
+      ctx.fill();
+    }
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+  }
+
+  function drawSegments(n) {
+    var slice = (Math.PI * 2) / n;
+    for (var i = 0; i < n; i++) {
+      var a0 = -Math.PI / 2 + i * slice;
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      ctx.arc(CX, CY, innerR - 1, a0, a0 + slice);
+      ctx.closePath();
+      var segGrad = ctx.createRadialGradient(CX, CY, hubR, CX, CY, innerR);
+      var base = colors[i % colors.length];
+      segGrad.addColorStop(0, shadeColor(base, 20));
+      segGrad.addColorStop(0.7, base);
+      segGrad.addColorStop(1, shadeColor(base, -25));
+      ctx.fillStyle = segGrad;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      ctx.arc(CX, CY, innerR - 1, a0, a0 + slice);
+      ctx.closePath();
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    var fontSize = n <= 8 ? 14 : n <= 16 ? 12 : n <= 30 ? 10 : n <= 50 ? 8 : 7;
+    var charStep = Math.ceil(fontSize * 1.15);
+    var availR = innerR - hubR - 16;
+    var maxChars = Math.max(2, Math.floor(availR / charStep));
+    for (var i = 0; i < n; i++) {
+      var a0 = -Math.PI / 2 + i * slice;
+      var mid = a0 + slice / 2;
+      var arcW = slice * (hubR + availR * 0.5);
+      if (arcW < fontSize * 0.6) continue;
+      ctx.save();
+      ctx.translate(CX, CY);
+      ctx.rotate(mid);
+      ctx.font = "800 " + fontSize + "px Outfit,system-ui,sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 1;
+      ctx.fillStyle = "#fff";
+      var label = entries[i];
+      if (label.length > maxChars) label = label.slice(0, maxChars - 1) + "\u2026";
+      for (var c = 0; c < label.length; c++) {
+        ctx.save();
+        ctx.translate(hubR + 10 + c * charStep, 0);
+        ctx.rotate(-mid);
+        ctx.fillText(label[c], 0, 0);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+  }
+
+  function drawHub() {
+    var grad = ctx.createRadialGradient(CX, CY - 8, 0, CX, CY, hubR);
+    grad.addColorStop(0, "#4a4a6a");
+    grad.addColorStop(0.6, "#2a2a40");
+    grad.addColorStop(1, "#1a1a2e");
+    ctx.beginPath();
+    ctx.arc(CX, CY, hubR, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(CX, CY, hubR, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(CX, CY, hubR * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    ctx.fill();
+  }
+
+  function drawPointer() {
+    var px = CX, py = CY - outerR - 4;
+    ctx.save();
+    ctx.shadowColor = "#ff2d55";
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.moveTo(px, py + 2);
+    ctx.lineTo(px - 14, py - 24);
+    ctx.lineTo(px + 14, py - 24);
+    ctx.closePath();
+    ctx.fillStyle = "#ff2d55";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(px, py - 16, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function shadeColor(hex, pct) {
+    var num = parseInt(hex.replace("#",""), 16);
+    var r = Math.min(255, Math.max(0, ((num >> 16) & 0xff) + pct));
+    var g = Math.min(255, Math.max(0, ((num >> 8) & 0xff) + pct));
+    var b = Math.min(255, Math.max(0, (num & 0xff) + pct));
+    return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+  }
+
+  function drawWinnerBanner() {
+    if (!showWinner || !currentWinner) return;
+    ctx.save();
+    ctx.globalAlpha = winnerAlpha;
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    var bannerH = 56;
+    var bannerY = CY + outerR - bannerH - 20;
+    var bannerW = 320;
+    var bannerX = CX - bannerW / 2;
+    var r = 14;
+    ctx.beginPath();
+    ctx.moveTo(bannerX + r, bannerY);
+    ctx.lineTo(bannerX + bannerW - r, bannerY);
+    ctx.quadraticCurveTo(bannerX + bannerW, bannerY, bannerX + bannerW, bannerY + r);
+    ctx.lineTo(bannerX + bannerW, bannerY + bannerH - r);
+    ctx.quadraticCurveTo(bannerX + bannerW, bannerY + bannerH, bannerX + bannerW - r, bannerY + bannerH);
+    ctx.lineTo(bannerX + r, bannerY + bannerH);
+    ctx.quadraticCurveTo(bannerX, bannerY + bannerH, bannerX, bannerY + bannerH - r);
+    ctx.lineTo(bannerX, bannerY + r);
+    ctx.quadraticCurveTo(bannerX, bannerY, bannerX + r, bannerY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = winnerAlpha;
+    ctx.font = "800 24px Outfit,system-ui,sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.7)";
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = "#ffe566";
+    var label = currentWinner;
+    if (label.length > 20) label = label.slice(0, 18) + "\u2026";
+    ctx.fillText(label, CX, bannerY + bannerH / 2);
+    ctx.restore();
+  }
+
+  function animateWinnerIn() {
+    winnerAlpha = 0;
+    showWinner = true;
+    var t0 = performance.now();
+    var dur = 500;
+    function fade(t) {
+      winnerAlpha = Math.min(1, (t - t0) / dur);
+      drawWheel();
+      if (winnerAlpha < 1) requestAnimationFrame(fade);
+    }
+    requestAnimationFrame(fade);
+  }
+
+  function drawWheel() {
+    ctx.clearRect(0, 0, W, H);
+    drawOuterRing();
+    drawLeds();
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(rotation);
+    ctx.translate(-CX, -CY);
+    var n = entries.length;
+    if (n === 0) {
+      ctx.beginPath();
+      ctx.arc(CX, CY, innerR - 1, 0, Math.PI * 2);
+      ctx.fillStyle = "#1a1a2e";
+      ctx.fill();
+    } else {
+      drawSegments(n);
+    }
+    drawHub();
+    ctx.restore();
+    drawPointer();
+    drawWinnerBanner();
+  }
+
+  var ledTimer = setInterval(function () {
+    ledPhase = (ledPhase + 1) % 3;
+    if (!spinning) drawWheel();
+  }, 400);
+
+  drawWheel();
+
+  function spinToWinner(winner) {
+    var n = entries.length;
+    if (n === 0) return;
+    var idx = entries.indexOf(winner);
+    if (idx < 0) return;
+    spinning = true;
+    showWinner = false;
+    currentWinner = winner;
+    var slice = (Math.PI * 2) / n;
+    var alpha = -Math.PI / 2 + (idx + 0.5) * slice;
+    var targetBase = -Math.PI / 2 - alpha;
+    var start = rotation;
+    var minRot = start + 5 * Math.PI * 2;
+    var k = Math.ceil((minRot - targetBase) / (Math.PI * 2));
+    var goal = targetBase + k * Math.PI * 2;
+    var t0 = performance.now();
+    var duration = 5000;
+    function frame(t) {
+      var p = Math.min(1, (t - t0) / duration);
+      var ease = 1 - Math.pow(1 - p, 4);
+      rotation = start + (goal - start) * ease;
+      ledPhase = Math.floor((t - t0) / 80) % 3;
+      drawWheel();
+      if (p < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        spinning = false;
+        animateWinnerIn();
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  var es = new EventSource("/api/events");
+  es.addEventListener("update", function (ev) {
+    try {
+      var s = JSON.parse(ev.data);
+      entries = s.entries.slice();
+      showWinner = false;
+      drawWheel();
+    } catch (e) {}
+  });
+  es.addEventListener("draw", function (ev) {
+    try {
+      var d = JSON.parse(ev.data);
+      if (d.winner) spinToWinner(d.winner);
+    } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>
