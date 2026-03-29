@@ -7,7 +7,9 @@
     "build": "tsdown",
     "start": "node dist/index.mjs",
     "prestart": "npm run build",
-    "dev": "npm run build && node dist/index.mjs"
+    "dev": "npm run build && node dist/index.mjs",
+    "raffle:draw": "node scripts/raffle.mjs draw",
+    "raffle:clear": "node scripts/raffle.mjs clear"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

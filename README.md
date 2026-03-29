@@ -51,6 +51,15 @@ At least one of `TWITCH_CHANNEL` or `YOUTUBE_CHANNEL_ID` should be set for chat 
 | `!drawraffle` | mods / broadcaster | Pick a random winner |
 | `!clearraffle` | mods / broadcaster | Remove all entries |
 
+## NPM Scripts
+
+While the bot is running, you can trigger raffle actions from a second terminal:
+
+| Script | Description |
+|---|---|
+| `npm run raffle:draw` | Draw a raffle winner |
+| `npm run raffle:clear` | Clear all raffle entries |
+
 ## Overlay API
 
 The built-in HTTP server exposes:
