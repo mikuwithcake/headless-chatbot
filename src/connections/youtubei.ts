@@ -25,7 +25,7 @@ export class YoutubeiConnection implements ChatConnection {
         `[YouTubei] Searching for active livestream on channel: ${this.cfg.channelId}`
       );
 
-      const videoId = await this.findLiveVideoId(yt);
+      const videoId = await this.findLiveVideoId();
       if (!videoId) {
         console.log(
           "[YouTubei] No active livestream found — skipping YouTube chat."
@@ -105,21 +105,24 @@ export class YoutubeiConnection implements ChatConnection {
     }
   }
 
-  private async findLiveVideoId(yt: Innertube): Promise<string | null> {
+  private async findLiveVideoId(): Promise<string | null> {
     try {
-      const channel = await yt.getChannel(this.cfg.channelId);
-      const tab = await channel.getLiveStreams();
-      for (const video of tab.videos) {
-        if (video.is(YTNodes.Video) || video.is(YTNodes.GridVideo)) {
-          const v = video as { id: string; is_live?: boolean };
-          if (v.is_live && v.id) {
-            return v.id;
-          }
-        }
+      const res = await fetch(
+        `https://www.youtube.com/channel/${this.cfg.channelId}/live`,
+        { headers: { "User-Agent": "Mozilla/5.0" } }
+      );
+      if (!res.ok) {
+        console.warn(`[YouTubei] /live returned HTTP ${res.status}.`);
+        return null;
       }
+      const html = await res.text();
+      const m = html.match(
+        /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([\w-]{11})"/
+      );
+      return m?.[1] ?? null;
     } catch (err) {
-      console.warn("[YouTubei] Channel lookup failed:", toErrorMessage(err));
+      console.warn("[YouTubei] /live lookup failed:", toErrorMessage(err));
+      return null;
     }
-    return null;
   }
 }
