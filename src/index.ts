@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { loadConfig } from "./config.js";
+import { WinnerDatabase } from "./database.js";
 import { RaffleService } from "./raffle.js";
 import { handleChatMessage } from "./router.js";
 import { TwitchConnection } from "./connections/twitch.js";
@@ -11,11 +12,13 @@ import { toErrorMessage } from "./utils.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const raffle = new RaffleService();
+  const db = WinnerDatabase.load();
+  const raffle = new RaffleService(db);
 
   const overlay = await startOverlayServer(raffle, {
     host: config.overlay.host,
     port: config.overlay.port,
+    db,
   });
 
   const onChatMessage = (msg: NormalizedChatMessage): void => {

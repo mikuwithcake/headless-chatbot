@@ -1,6 +1,8 @@
 import { defineConfig } from "tsdown";
-import { copyFileSync, mkdirSync } from "node:fs";
 
+// The overlay HTML is inlined by scripts/gen-assets.mjs (see the `gen:assets`
+// npm script) so both `dist/index.mjs` and the compiled executables are
+// self-contained — no sibling .html files to ship.
 export default defineConfig({
   entry: ["src/index.ts"],
   format: "esm",
@@ -8,8 +10,4 @@ export default defineConfig({
   target: "node20",
   outDir: "dist",
   clean: true,
-  onSuccess: () => {
-    mkdirSync("dist", { recursive: true });
-    copyFileSync("src/server/wheel.html", "dist/wheel.html");
-  },
 });

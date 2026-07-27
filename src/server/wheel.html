@@ -34,10 +34,19 @@
     "rgba(191,90,242,0.35)","rgba(100,210,255,0.35)","rgba(255,159,10,0.35)",
     "rgba(50,215,75,0.35)"
   ];
+  var winnerWins = null;
+  var winnerPreviousWonAt = null;
   var W = 500, H = 500, CX = 250, CY = 250;
   var outerR = 240, innerR = 215, hubR = 38;
   var ledCount = 32;
   var ledPhase = 0;
+
+  /** Wraps an angle into [-PI, PI) so we can test which screen half it points at. */
+  function normalizeAngle(a) {
+    var t = (a + Math.PI) % (Math.PI * 2);
+    if (t < 0) t += Math.PI * 2;
+    return t - Math.PI;
+  }
 
   function drawOuterRing() {
     var grad = ctx.createRadialGradient(CX, CY, innerR, CX, CY, outerR + 4);
@@ -128,13 +137,24 @@
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 1;
       ctx.fillStyle = "#fff";
-      var label = entries[i];
-      if (label.length > maxChars) label = label.slice(0, maxChars - 1) + "\u2026";
-      for (var c = 0; c < label.length; c++) {
+      // Array.from keeps astral chars (emoji) in one piece.
+      var chars = Array.from(entries[i]);
+      if (chars.length > maxChars) chars = chars.slice(0, maxChars - 1).concat("\u2026");
+      // Glyphs sit along the spoke, first char nearest the hub. Where "outward"
+      // points left (or up, on a near-vertical spoke) the name comes out
+      // backwards \u2014 "treM" instead of "Mert" \u2014 so flip the order there. We read
+      // along whichever axis the spoke leans on: left-to-right for a mostly
+      // horizontal spoke, top-to-bottom for a mostly vertical one.
+      var world = normalizeAngle(mid + rotation);
+      var dx = Math.cos(world), dy = Math.sin(world);
+      var backwards = Math.abs(dx) >= Math.abs(dy) ? dx < 0 : dy < 0;
+      if (backwards) chars.reverse();
+      // The extra -rotation cancels the wheel spin so glyphs stay upright.
+      for (var c = 0; c < chars.length; c++) {
         ctx.save();
         ctx.translate(hubR + 10 + c * charStep, 0);
-        ctx.rotate(-mid);
-        ctx.fillText(label[c], 0, 0);
+        ctx.rotate(-mid - rotation);
+        ctx.fillText(chars[c], 0, 0);
         ctx.restore();
       }
       ctx.restore();
@@ -198,12 +218,34 @@
     return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
   }
 
+  function agoText(secs) {
+    if (secs < 90) return "just now";
+    if (secs < 5400) return Math.round(secs / 60) + "m ago";
+    if (secs < 129600) return Math.round(secs / 3600) + "h ago";
+    var d = Math.round(secs / 86400);
+    return d + (d === 1 ? " day ago" : " days ago");
+  }
+
+  /**
+   * "win #3 · won 2 days ago", or null when there is nothing to say — first-time
+   * winners and anyone whose record aged out of the tally just get their name.
+   */
+  function winnerSubtitle() {
+    if (winnerWins === null || !winnerPreviousWonAt) return null;
+    var when = new Date(winnerPreviousWonAt);
+    if (isNaN(when.getTime())) return null;
+    var secs = Math.round((Date.now() - when.getTime()) / 1000);
+    if (secs < 0) return null;
+    return "win #" + winnerWins + " · won " + agoText(secs);
+  }
+
   function drawWinnerBanner() {
     if (!showWinner || !currentWinner) return;
+    var subtitle = winnerSubtitle();
     ctx.save();
     ctx.globalAlpha = winnerAlpha;
     ctx.fillStyle = "rgba(0,0,0,0.65)";
-    var bannerH = 56;
+    var bannerH = subtitle ? 74 : 56;
     var bannerY = CY + outerR - bannerH - 20;
     var bannerW = 320;
     var bannerX = CX - bannerW / 2;
@@ -232,7 +274,12 @@
     ctx.fillStyle = "#ffe566";
     var label = currentWinner;
     if (label.length > 20) label = label.slice(0, 18) + "\u2026";
-    ctx.fillText(label, CX, bannerY + bannerH / 2);
+    ctx.fillText(label, CX, subtitle ? bannerY + 26 : bannerY + bannerH / 2);
+    if (subtitle) {
+      ctx.font = "600 13px Outfit,system-ui,sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.fillText(subtitle, CX, bannerY + 53);
+    }
     ctx.restore();
   }
 
@@ -279,7 +326,7 @@
 
   drawWheel();
 
-  function spinToWinner(winner) {
+  function spinToWinner(winner, wins, previousWonAt) {
     var n = entries.length;
     if (n === 0) return;
     var idx = entries.indexOf(winner);
@@ -287,6 +334,8 @@
     spinning = true;
     showWinner = false;
     currentWinner = winner;
+    winnerWins = typeof wins === "number" ? wins : null;
+    winnerPreviousWonAt = previousWonAt || null;
     var slice = (Math.PI * 2) / n;
     var alpha = -Math.PI / 2 + (idx + 0.5) * slice;
     var targetBase = -Math.PI / 2 - alpha;
@@ -324,7 +373,7 @@
   es.addEventListener("draw", function (ev) {
     try {
       var d = JSON.parse(ev.data);
-      if (d.winner) spinToWinner(d.winner);
+      if (d.winner) spinToWinner(d.winner, d.wins, d.previousWonAt);
     } catch (e) {}
   });
 })();

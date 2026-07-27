@@ -17,7 +17,10 @@ try {
 
   if (action === "draw") {
     if (body.ok) {
-      console.log(`Winner: ${body.winner}`);
+      const tally = body.wins ? ` (win #${body.wins})` : "";
+      const last = body.previousWonAt ? `, last won ${body.previousWonAt}` : "";
+      console.log(`Winner: ${body.winner}${tally}${last}`);
+      console.log("Submissions are now closed — run raffle:clear to reopen.");
     } else {
       console.log("No entries in the raffle.");
     }

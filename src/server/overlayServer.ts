@@ -1,12 +1,12 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 import type { ServerResponse } from "node:http";
-import type { RaffleService, RaffleSnapshot } from "../raffle.js";
+import type { RaffleService, RaffleSnapshot, DrawResult } from "../raffle.js";
+import { retentionDays } from "../database.js";
+import type { WinnerDatabase } from "../database.js";
+import { createLogger } from "../logger.js";
+import { WHEEL_HTML, HISTORY_HTML } from "./assets.generated.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const WHEEL_HTML = readFileSync(join(__dirname, "wheel.html"), "utf-8");
+const log = createLogger("overlay");
 
 function sseWrite(res: ServerResponse, event: string, data: string): void {
   res.write(`event: ${event}\ndata: ${data}\n\n`);
@@ -23,14 +23,21 @@ function json(
   res.end(JSON.stringify(body));
 }
 
+function html(res: ServerResponse, body: string): void {
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(body);
+}
+
 export function startOverlayServer(
   raffle: RaffleService,
-  opts: { host: string; port: number }
+  opts: { host: string; port: number; db?: WinnerDatabase | null }
 ): Promise<{ close: () => Promise<void> }> {
   const clients = new Set<ServerResponse>();
+  const db = opts.db ?? null;
 
   const broadcast = (event: string, payload: unknown): void => {
     const data = JSON.stringify(payload);
+    log.trace(`Broadcasting "${event}" to ${clients.size} client(s):`, data);
     for (const res of clients) {
       sseWrite(res, event, data);
     }
@@ -39,7 +46,7 @@ export function startOverlayServer(
   const onUpdate = (snap: RaffleSnapshot): void => {
     broadcast("update", snap);
   };
-  const onDraw = (payload: { winner: string }): void => {
+  const onDraw = (payload: DrawResult): void => {
     broadcast("draw", payload);
   };
 
@@ -48,18 +55,30 @@ export function startOverlayServer(
 
   const server = createServer((req, res) => {
     const path = req.url?.split("?")[0] ?? "/";
+    log.trace(`${req.method ?? "?"} ${req.url ?? "?"}`);
 
     if (req.method === "GET" && path === "/") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(WHEEL_HTML);
+      html(res, WHEEL_HTML);
+      return;
+    }
+
+    if (req.method === "GET" && (path === "/history" || path === "/winners")) {
+      html(res, HISTORY_HTML);
       return;
     }
 
     if (req.method === "GET" && path === "/api/raffle") {
-      res.writeHead(200, {
-        "Content-Type": "application/json; charset=utf-8",
+      json(res, 200, raffle.getSnapshot());
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/history") {
+      json(res, 200, {
+        path: db?.path ?? null,
+        retentionDays: retentionDays(),
+        totalWins: db?.totalWins() ?? 0,
+        winners: db?.list() ?? [],
       });
-      res.end(JSON.stringify(raffle.getSnapshot()));
       return;
     }
 
@@ -70,9 +89,11 @@ export function startOverlayServer(
         Connection: "keep-alive",
       });
       clients.add(res);
+      log.debug(`SSE client connected (${clients.size} total)`);
       sseWrite(res, "update", JSON.stringify(raffle.getSnapshot()));
       req.on("close", () => {
         clients.delete(res);
+        log.debug(`SSE client disconnected (${clients.size} left)`);
       });
       return;
     }
@@ -80,7 +101,7 @@ export function startOverlayServer(
     if (req.method === "POST" && path === "/api/draw") {
       const result = raffle.draw();
       if (result) {
-        json(res, 200, { ok: true, winner: result.winner });
+        json(res, 200, { ok: true, ...result });
       } else {
         json(res, 200, { ok: false, error: "no_entries" });
       }
@@ -103,6 +124,9 @@ export function startOverlayServer(
       const showHost = opts.host === "0.0.0.0" ? "127.0.0.1" : opts.host;
       console.log(
         `[overlay] http://${showHost}:${opts.port}/ (bind ${opts.host}:${opts.port})`
+      );
+      console.log(
+        `[overlay] Winner history: http://${showHost}:${opts.port}/history`
       );
       console.log(
         `[overlay] Local draw test (no chat): open http://${showHost}:${opts.port}/?dev=1 — buttons call POST /api/draw`

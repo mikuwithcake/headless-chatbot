@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "gen:assets": "node scripts/gen-assets.mjs",
+    "pretypecheck": "npm run gen:assets",
     "typecheck": "tsc --noEmit",
+    "prebuild": "npm run gen:assets",
     "build": "tsdown",
+    "build:exe": "npm run gen:assets && bun build --compile --minify --target=bun-linux-x64 ./src/index.ts --outfile dist/headless-bot",
     "start": "node dist/index.mjs",
     "prestart": "npm run build",
     "dev": "npm run build && node dist/index.mjs",
