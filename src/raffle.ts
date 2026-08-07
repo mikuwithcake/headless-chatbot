@@ -6,6 +6,11 @@ const log = createLogger("raffle");
 
 export interface RaffleSnapshot {
   entries: readonly string[];
+  /**
+   * Subset of `entries` who joined with !feelalive: draw them and we re-roll by
+   * hand. The wheel paints their segment black so we can see it happen live.
+   */
+  feelAlive: readonly string[];
   lastWinner: string | null;
   /** True once a draw has happened: no new entries until the raffle is cleared. */
   locked: boolean;
@@ -25,6 +30,7 @@ export type EnterResult =
 
 export class RaffleService extends EventEmitter {
   private entries: string[] = [];
+  private feelAlive: string[] = [];
   private lastWinner: string | null = null;
   private locked = false;
 
@@ -43,6 +49,7 @@ export class RaffleService extends EventEmitter {
   getSnapshot(): RaffleSnapshot {
     return {
       entries: [...this.entries],
+      feelAlive: [...this.feelAlive],
       lastWinner: this.lastWinner,
       locked: this.locked,
     };
@@ -50,14 +57,22 @@ export class RaffleService extends EventEmitter {
 
   seedEntries(names: readonly string[]): void {
     this.entries = [...names];
+    this.feelAlive = [];
     this.locked = false;
     log.debug(`Seeded ${this.entries.length} entries, lock released`);
     log.trace("Seeded entries:", this.entries);
     this.emit("update", this.getSnapshot());
   }
 
-  enter(username: string): EnterResult {
-    log.trace(`enter("${username}") — locked=${this.locked}, entries=${this.entries.length}`);
+  /**
+   * @param feelAlive Entered via !feelalive — flag them for a manual re-roll.
+   *   The duplicate check runs first, so this never converts an existing entry
+   *   either way: whichever command got them onto the wheel is the one that sticks.
+   */
+  enter(username: string, feelAlive = false): EnterResult {
+    log.trace(
+      `enter("${username}", feelAlive=${feelAlive}) — locked=${this.locked}, entries=${this.entries.length}`
+    );
 
     if (this.locked) {
       log.debug(
@@ -71,7 +86,10 @@ export class RaffleService extends EventEmitter {
     }
 
     this.entries.push(username);
-    log.debug(`Accepted "${username}" — ${this.entries.length} entries total`);
+    if (feelAlive) this.feelAlive.push(username);
+    log.debug(
+      `Accepted "${username}"${feelAlive ? " (feelalive — black on the wheel)" : ""} — ${this.entries.length} entries total`
+    );
     this.emit("update", this.getSnapshot());
     return { ok: true };
   }
@@ -79,6 +97,7 @@ export class RaffleService extends EventEmitter {
   clear(): void {
     const had = this.entries.length;
     this.entries = [];
+    this.feelAlive = [];
     this.locked = false;
     log.debug(`Cleared ${had} entries, lock released — accepting submissions again`);
     this.emit("update", this.getSnapshot());

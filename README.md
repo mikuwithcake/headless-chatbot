@@ -57,11 +57,22 @@ At least one of `TWITCH_CHANNEL` or `YOUTUBE_CHANNEL_ID` should be set for chat 
 
 ## Chat Commands
 
-| Command | Who | Effect |
-|---|---|---|
-| `!raffle` | anyone | Enter the raffle |
-| `!drawraffle` | mods / broadcaster | Pick a random winner **and close submissions** |
-| `!clearraffle` | mods / broadcaster | Remove all entries and reopen submissions |
+| Command | Alias | Who | Effect |
+|---|---|---|---|
+| `!raffle` | — | anyone | Enter the raffle |
+| `!feelalive` | — | anyone | Enter the raffle **as a black segment** — a request to be re-rolled if drawn |
+| `!drawraffle` | `!dr` | mods / broadcaster | Pick a random winner **and close submissions** |
+| `!clearraffle` | `!cr` | mods / broadcaster | Remove all entries and reopen submissions |
+
+Commands are case-insensitive and must be the whole message.
+
+`!feelalive` is a second way to join, not a modifier: it enters you *and* paints
+your slice pure black on the wheel, which is the signal that you would rather the
+wheel be spun again if it lands on you. The bot does not act on that itself — the
+draw is a normal draw, and a mod re-runs `!drawraffle` by hand. Whichever command
+got you onto the wheel is the one that sticks: `!raffle` after `!feelalive` (or
+the other way round) just gets the usual "you're already in the raffle" reply. The
+flags clear with `!clearraffle`.
 
 Drawing a winner locks the raffle: the wheel's rendered state is frozen for the
 spin, so anyone entering afterwards would never appear on it. `!raffle` replies
@@ -110,7 +121,7 @@ The built-in HTTP server exposes:
 |---|---|---|
 | `/` | GET | Spin-the-wheel HTML overlay |
 | `/history` | GET | Winner leaderboard page (alias: `/winners`) |
-| `/api/raffle` | GET | Current raffle state (JSON, includes `locked`) |
+| `/api/raffle` | GET | Current raffle state (JSON, includes `locked` and `feelAlive`) |
 | `/api/history` | GET | Winner tally (JSON) |
 | `/api/events` | GET | SSE stream (`update` and `draw` events) |
 | `/api/draw` | POST | Trigger a draw (also locks submissions) |

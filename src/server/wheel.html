@@ -19,6 +19,9 @@
   var canvas = document.getElementById("wheel");
   var ctx = canvas.getContext("2d");
   var entries = [];
+  // Set of names who joined with !feelalive, keyed by exact entry name. Null
+  // prototype so a name like "constructor" can't test truthy by accident.
+  var feelAlive = Object.create(null);
   var rotation = 0;
   var spinning = false;
   var currentWinner = "";
@@ -102,12 +105,18 @@
       ctx.moveTo(CX, CY);
       ctx.arc(CX, CY, innerR - 1, a0, a0 + slice);
       ctx.closePath();
-      var segGrad = ctx.createRadialGradient(CX, CY, hubR, CX, CY, innerR);
-      var base = colors[i % colors.length];
-      segGrad.addColorStop(0, shadeColor(base, 20));
-      segGrad.addColorStop(0.7, base);
-      segGrad.addColorStop(1, shadeColor(base, -25));
-      ctx.fillStyle = segGrad;
+      // !feelalive entries get flat pure black — no gradient, so it reads as a
+      // hole in the wheel and we know to re-roll by hand if it wins.
+      if (feelAlive[entries[i]]) {
+        ctx.fillStyle = "#000000";
+      } else {
+        var segGrad = ctx.createRadialGradient(CX, CY, hubR, CX, CY, innerR);
+        var base = colors[i % colors.length];
+        segGrad.addColorStop(0, shadeColor(base, 20));
+        segGrad.addColorStop(0.7, base);
+        segGrad.addColorStop(1, shadeColor(base, -25));
+        ctx.fillStyle = segGrad;
+      }
       ctx.fill();
       ctx.beginPath();
       ctx.moveTo(CX, CY);
@@ -366,6 +375,9 @@
     try {
       var s = JSON.parse(ev.data);
       entries = s.entries.slice();
+      feelAlive = Object.create(null);
+      var flagged = s.feelAlive || [];
+      for (var i = 0; i < flagged.length; i++) feelAlive[flagged[i]] = true;
       showWinner = false;
       drawWheel();
     } catch (e) {}

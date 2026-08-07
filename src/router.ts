@@ -5,6 +5,18 @@ import { createLogger } from "./logger.js";
 
 const log = createLogger("router");
 
+type Command = "raffle" | "feelalive" | "clearraffle" | "drawraffle";
+
+/** Every spelling we answer to, aliases included. Keys must be lowercase. */
+const COMMANDS: Readonly<Record<string, Command>> = {
+  "!raffle": "raffle",
+  "!feelalive": "feelalive",
+  "!clearraffle": "clearraffle",
+  "!cr": "clearraffle",
+  "!drawraffle": "drawraffle",
+  "!dr": "drawraffle",
+};
+
 export function handleChatMessage(
   config: AppConfig,
   msg: NormalizedChatMessage,
@@ -15,26 +27,34 @@ export function handleChatMessage(
     console.log(`[debug][${msg.platform}] ${msg.authorDisplayName}: ${msg.rawText}`);
   }
 
-  if (text === "!raffle") {
+  const command = COMMANDS[text.toLowerCase()];
+  if (!command) return;
+
+  if (command === "raffle" || command === "feelalive") {
+    const feelAlive = command === "feelalive";
     const name = msg.authorDisplayName;
-    log.trace(`!raffle from "${name}" (${msg.platform})`);
-    const r = raffle.enter(name);
+    log.trace(`!${command} from "${name}" (${msg.platform})`);
+    const r = raffle.enter(name, feelAlive);
     if (!r.ok) {
       if (r.reason === "locked") {
         log.debug(`Turned "${name}" away — raffle already drawn, submissions closed`);
         msg.reply(`@${name}, the raffle is closed — a winner has already been drawn!`);
         return;
       }
+      // Already on the wheel, so !raffle and !feelalive are both no-ops here —
+      // neither one can flip an entry that is already in.
       msg.reply(`@${name}, you're already in the raffle!`);
       return;
     }
     msg.reply(
-      `@${name} has entered the raffle! (${raffle.entryCount} entries)`
+      feelAlive
+        ? `@${name} has entered the raffle — blacked out, re-roll if they win! (${raffle.entryCount} entries)`
+        : `@${name} has entered the raffle! (${raffle.entryCount} entries)`
     );
     return;
   }
 
-  if (text === "!clearraffle") {
+  if (command === "clearraffle") {
     if (!msg.privileges.canModerate) return;
     const count = raffle.entryCount;
     log.debug(`!clearraffle from "${msg.authorDisplayName}" — dropping ${count} entries`);
@@ -43,7 +63,7 @@ export function handleChatMessage(
     return;
   }
 
-  if (text === "!drawraffle") {
+  if (command === "drawraffle") {
     if (!msg.privileges.canModerate) return;
     log.debug(`!drawraffle from "${msg.authorDisplayName}" — ${raffle.entryCount} entries in play`);
     const result = raffle.draw();
